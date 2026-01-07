@@ -3,7 +3,25 @@ import MarketChart from './components/MarketChart';
 import Controls from './components/Controls';
 import StatsPanel from './components/StatsPanel';
 import { MarketParams, MarketData } from './types';
-import { TrendingUp } from 'lucide-react';
+
+// Inline SVG Icon to avoid external dependency issues
+const TrendingUp = ({ className }: { className?: string }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width="24" 
+    height="24" 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+    <polyline points="16 7 22 7 22 13" />
+  </svg>
+);
 
 const App: React.FC = () => {
   // Initial State: Standard X supply/demand cross
@@ -57,7 +75,7 @@ const App: React.FC = () => {
         <header className="mb-8">
           <div className="flex items-center space-x-3 mb-2">
             <div className="bg-indigo-600 p-2 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-white" />
+              <TrendingUp className="className='w-6 h-6 text-white'" />
             </div>
             <h1 className="text-3xl font-bold text-slate-900">经济学模拟器 (Economics Simulator)</h1>
           </div>
