@@ -75,7 +75,7 @@ const App: React.FC = () => {
         <header className="mb-8">
           <div className="flex items-center space-x-3 mb-2">
             <div className="bg-indigo-600 p-2 rounded-lg">
-              <TrendingUp className="className='w-6 h-6 text-white'" />
+              <TrendingUp className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-slate-900">经济学模拟器 (Economics Simulator)</h1>
           </div>

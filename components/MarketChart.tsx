@@ -1,17 +1,5 @@
 import React, { useMemo } from 'react';
-import {
-  ComposedChart,
-  Line,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceDot,
-  Label
-} from 'recharts';
-import { MarketParams, MarketData, ChartPoint } from '../types';
+import { MarketParams, MarketData } from '../types';
 
 interface MarketChartProps {
   params: MarketParams;
@@ -20,130 +8,163 @@ interface MarketChartProps {
 
 const MarketChart: React.FC<MarketChartProps> = ({ params, marketData }) => {
   const { eqQuantity, eqPrice } = marketData;
+  const { demandIntercept, demandSlope, supplyIntercept, supplySlope } = params;
 
-  // Generate data points for the chart
-  const data = useMemo(() => {
-    const points: ChartPoint[] = [];
-    const maxQ = Math.max(eqQuantity * 1.5, 20); // Dynamic X-axis range
-    const step = maxQ / 50;
+  // Chart Dimensions
+  // Using a fixed viewBox aspect ratio (3:2)
+  const width = 600;
+  const height = 400;
+  const padding = 40;
+  
+  const graphWidth = width - padding * 2;
+  const graphHeight = height - padding * 2;
 
-    // We strictly want a point AT equilibrium for clean shading
-    const qValues = new Set<number>();
-    for (let q = 0; q <= maxQ; q += step) qValues.add(q);
-    qValues.add(eqQuantity); // Ensure precise intersection
-    
-    const sortedQs = Array.from(qValues).sort((a, b) => a - b);
+  // Calculate Chart Domains (Scales)
+  // Max Quantity: slightly more than equilibrium to show context
+  const maxQ = Math.max(eqQuantity * 1.5, 20); 
+  // Max Price: usually the demand intercept (highest willingness to pay)
+  const maxP = Math.max(demandIntercept, supplyIntercept + supplySlope * maxQ) * 1.1;
 
-    sortedQs.forEach((q) => {
-      const demandP = Math.max(0, params.demandIntercept - params.demandSlope * q);
-      const supplyP = Math.max(0, params.supplyIntercept + params.supplySlope * q);
-      
-      // Calculate areas only if Q <= Equilibrium Quantity
-      const isLeftOfEq = q <= eqQuantity + 0.001; // Epsilon for float comparison
+  // Helper functions to map data values to SVG coordinates
+  const toX = (q: number) => padding + (q / maxQ) * graphWidth;
+  const toY = (p: number) => height - padding - (p / maxP) * graphHeight;
 
-      points.push({
-        q: Number(q.toFixed(2)),
-        demand: demandP > 0 ? Number(demandP.toFixed(2)) : null,
-        supply: Number(supplyP.toFixed(2)),
-        priceLine: Number(eqPrice.toFixed(2)),
-        // "csArea" is the demand curve value used for the shading area, bounded by Q_e
-        csArea: isLeftOfEq ? Number(demandP.toFixed(2)) : null,
-        // "psArea" is the supply curve value used for the shading area, bounded by Q_e
-        psArea: isLeftOfEq ? Number(supplyP.toFixed(2)) : null,
-      });
-    });
+  // Generate Points for Lines
+  const demandStart = { x: toX(0), y: toY(demandIntercept) };
+  // Demand hits P=0 at Q = intercept/slope
+  const qZeroDemand = demandIntercept / demandSlope;
+  const demandEndQ = Math.min(maxQ, qZeroDemand);
+  const demandEnd = { x: toX(demandEndQ), y: toY(demandIntercept - demandSlope * demandEndQ) };
 
-    return points;
-  }, [params, eqQuantity, eqPrice]);
+  const supplyStart = { x: toX(0), y: toY(supplyIntercept) };
+  const supplyEnd = { x: toX(maxQ), y: toY(supplyIntercept + supplySlope * maxQ) };
+
+  const eqPoint = { x: toX(eqQuantity), y: toY(eqPrice) };
+
+  // Generate Area Paths
+  // Consumer Surplus: Triangle formed by (0, DemandIntercept), (EqQ, EqP), (0, EqP)
+  const csPath = `M ${toX(0)},${toY(demandIntercept)} L ${eqPoint.x},${eqPoint.y} L ${toX(0)},${eqPoint.y} Z`;
+
+  // Producer Surplus: Triangle formed by (0, SupplyIntercept), (EqQ, EqP), (0, EqP)
+  const psPath = `M ${toX(0)},${toY(supplyIntercept)} L ${eqPoint.x},${eqPoint.y} L ${toX(0)},${eqPoint.y} Z`;
+
+  // Grid lines
+  const gridLines = useMemo(() => {
+    const lines = [];
+    const xSteps = 5;
+    const ySteps = 5;
+
+    for (let i = 0; i <= xSteps; i++) {
+      const qVal = (maxQ / xSteps) * i;
+      const x = toX(qVal);
+      lines.push(
+        <React.Fragment key={`x-${i}`}>
+          <line x1={x} y1={padding} x2={x} y2={height - padding} stroke="#e2e8f0" strokeDasharray="4 4" />
+          <text x={x} y={height - padding + 20} textAnchor="middle" fontSize="11" fill="#64748b">
+            {qVal.toFixed(0)}
+          </text>
+        </React.Fragment>
+      );
+    }
+
+    for (let i = 0; i <= ySteps; i++) {
+      const pVal = (maxP / ySteps) * i;
+      const y = toY(pVal);
+      lines.push(
+        <React.Fragment key={`y-${i}`}>
+          <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#e2e8f0" strokeDasharray="4 4" />
+          <text x={padding - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
+            ${pVal.toFixed(0)}
+          </text>
+        </React.Fragment>
+      );
+    }
+    return lines;
+  }, [maxQ, maxP]);
 
   return (
-    <div className="w-full h-[400px] md:h-[500px] bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart
-          data={data}
-          margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
+    <div className="w-full bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      {/* 
+        Container ensures the SVG maintains aspect ratio and doesn't explode. 
+        'max-w-full' ensures it fits in the grid.
+        'h-auto' allows height to adjust based on width.
+      */}
+      <div className="relative w-full" style={{ paddingBottom: '66.66%' /* 3:2 Aspect Ratio */ }}>
+        <svg 
+          viewBox={`0 0 ${width} ${height}`} 
+          className="absolute top-0 left-0 w-full h-full"
+          preserveAspectRatio="xMidYMid meet"
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-          <XAxis 
-            dataKey="q" 
-            type="number" 
-            domain={[0, 'auto']} 
-            tick={{ fill: '#64748b' }}
-          >
-            <Label value="数量 (Quantity)" offset={0} position="insideBottom" fill="#475569" />
-          </XAxis>
-          <YAxis 
-            domain={[0, 'auto']} 
-            tick={{ fill: '#64748b' }}
-          >
-             <Label value="价格 (Price)" angle={-90} position="insideLeft" fill="#475569" style={{ textAnchor: 'middle' }} />
-          </YAxis>
-          <Tooltip 
-            contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-            formatter={(value: number) => [`$${value}`, '']}
-            labelFormatter={(label) => `数量: ${label}`}
-          />
+          {/* Axis Labels */}
+          <text x={width / 2} y={height - 5} textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold">
+            数量 (Quantity)
+          </text>
+          <text x={12} y={height / 2} textAnchor="middle" fill="#475569" fontSize="12" fontWeight="bold" transform={`rotate(-90, 12, ${height / 2})`}>
+            价格 (Price)
+          </text>
+
+          {/* Grid */}
+          {gridLines}
+
+          {/* Consumer Surplus Area */}
+          <path d={csPath} fill="#3b82f6" fillOpacity="0.2" stroke="none" />
           
-          {/* Consumer Surplus Area: Fill between Demand (csArea) and EqPrice */}
-          <Area
-            type="monotone"
-            dataKey="csArea"
-            stroke="none"
-            fill="#3b82f6"
-            fillOpacity={0.2}
-            baseValue={eqPrice}
-            name="消费者剩余 (Consumer Surplus)"
-            isAnimationActive={false}
+          {/* Producer Surplus Area */}
+          <path d={psPath} fill="#a855f7" fillOpacity="0.2" stroke="none" />
+
+          {/* Axes Lines */}
+          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#64748b" strokeWidth="2" />
+          <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#64748b" strokeWidth="2" />
+
+          {/* Demand Line */}
+          <line 
+            x1={demandStart.x} y1={demandStart.y} 
+            x2={demandEnd.x} y2={demandEnd.y} 
+            stroke="#2563eb" strokeWidth="3" 
+            strokeLinecap="round"
           />
 
-          {/* Producer Surplus Area: Fill between Supply (psArea) and EqPrice */}
-          <Area
-            type="monotone"
-            dataKey="psArea"
-            stroke="none"
-            fill="#a855f7"
-            fillOpacity={0.2}
-            baseValue={eqPrice}
-            name="生产者剩余 (Producer Surplus)"
-            isAnimationActive={false}
+          {/* Supply Line */}
+          <line 
+            x1={supplyStart.x} y1={supplyStart.y} 
+            x2={supplyEnd.x} y2={supplyEnd.y} 
+            stroke="#ef4444" strokeWidth="3" 
+            strokeLinecap="round"
           />
 
-          {/* Main Lines */}
-          <Line 
-            type="monotone" 
-            dataKey="demand" 
-            stroke="#2563eb" 
-            strokeWidth={3} 
-            dot={false} 
-            name="需求曲线"
-            isAnimationActive={false}
+          {/* Equilibrium Lines */}
+          <line 
+            x1={eqPoint.x} y1={eqPoint.y} 
+            x2={eqPoint.x} y2={height - padding} 
+            stroke="#64748b" strokeWidth="2" strokeDasharray="5 5" 
           />
-          <Line 
-            type="monotone" 
-            dataKey="supply" 
-            stroke="#ef4444" 
-            strokeWidth={3} 
-            dot={false} 
-            name="供给曲线"
-            isAnimationActive={false}
-          />
-          
-          {/* Equilibrium Price Line (Visual Guide) */}
-          <Line
-            type="monotone"
-            dataKey="priceLine"
-            stroke="#64748b"
-            strokeDasharray="5 5"
-            strokeWidth={2}
-            dot={false}
-            name="均衡价格"
-            activeDot={false}
-            isAnimationActive={false}
+          <line 
+            x1={padding} y1={eqPoint.y} 
+            x2={eqPoint.x} y2={eqPoint.y} 
+            stroke="#64748b" strokeWidth="2" strokeDasharray="5 5" 
           />
 
-          <ReferenceDot x={eqQuantity} y={eqPrice} r={6} fill="#0f172a" stroke="#fff" strokeWidth={2} />
-        </ComposedChart>
-      </ResponsiveContainer>
+          {/* Equilibrium Dot */}
+          <circle cx={eqPoint.x} cy={eqPoint.y} r="5" fill="#0f172a" stroke="#fff" strokeWidth="2" />
+
+          {/* Labels for Lines */}
+          <text x={demandEnd.x - 10} y={demandEnd.y - 15} fill="#2563eb" fontWeight="bold" fontSize="12" textAnchor="end">需求 D</text>
+          <text x={supplyEnd.x - 10} y={supplyEnd.y - 15} fill="#ef4444" fontWeight="bold" fontSize="12" textAnchor="end">供给 S</text>
+
+        </svg>
+      </div>
+      
+      {/* Legend */}
+      <div className="flex justify-center space-x-6 mt-4 text-sm">
+         <div className="flex items-center">
+            <span className="w-3 h-3 bg-blue-500 opacity-30 mr-2 border border-blue-500"></span>
+            <span className="text-slate-600">消费者剩余</span>
+         </div>
+         <div className="flex items-center">
+            <span className="w-3 h-3 bg-purple-500 opacity-30 mr-2 border border-purple-500"></span>
+            <span className="text-slate-600">生产者剩余</span>
+         </div>
+      </div>
     </div>
   );
 };
